@@ -2,6 +2,7 @@
   "name": "yardwatch",
   "version": "0.0.1",
   "private": true,
+  "packageManager": "npm@11.6.1",
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
@@ -21,5 +22,10 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "leaflet-draw": "^1.0.4",
+    "react-leaflet": "^5.0.0"
+  }
 }
