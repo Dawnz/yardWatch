@@ -7,7 +7,14 @@ export interface AuthIdentity {
 }
 
 const AUTH_HEADER_NAMES = ['cookie', 'authorization', 'origin', 'user-agent'] as const;
-
+const demoSessions = [
+	{
+		sessionId: 'demo-session',
+		userId: '1',
+		organizationId: 'org1',
+		token: 'demo-token',
+	},
+];
 export function buildAuthHeaders(request: Request): Headers {
 	const headers = new Headers();
 
@@ -22,9 +29,26 @@ export function buildAuthHeaders(request: Request): Headers {
 	return headers;
 }
 
-async function resolveSessionFromAuthSystem(_headers: Headers, _env: WorkerEnv): Promise<AuthIdentity | null> {
-	// TODO: Replace this stub with the real auth/session lookup implementation.
-	return null;
+async function resolveSessionFromAuthSystem(headers: Headers, _env: WorkerEnv): Promise<AuthIdentity | null> {
+	const authHeader = headers.get('authorization');
+
+	if (!authHeader) {
+		return null;
+	}
+
+	const token = authHeader.replace('Bearer ', '');
+
+	const session = demoSessions.find((s) => s.token === token);
+
+	if (!session) {
+		return null;
+	}
+
+	return {
+		userId: session.userId,
+		sessionId: session.sessionId,
+		organizationId: session.organizationId,
+	};
 }
 
 export async function resolveAuth(request: Request, env: WorkerEnv): Promise<AuthIdentity | null> {

@@ -7,6 +7,12 @@ const demoSubmissionSchema = z.object({
 });
 
 export const demoRouter = router({
+	hello: publicProcedure.query(() => {
+		return {
+			message: 'Hello World',
+			time: new Date().toISOString(),
+		};
+	}),
 	submit: publicProcedure.input(demoSubmissionSchema).mutation(({ input }) => {
 		return {
 			status: 'accepted' as const,
