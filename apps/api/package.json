@@ -13,6 +13,7 @@
 		"typecheck": "tsc --noEmit",
 		"start-db": "bash ./scripts/start-db.sh",
 		"seed-db": "bash ./scripts/seed-db.sh",
+		"seed-incidents": "tsx scripts/seed-incidents.ts",
 		"seed-users": "tsx scripts/seed-users.ts",
 		"cf-typegen": "wrangler types"
 	},

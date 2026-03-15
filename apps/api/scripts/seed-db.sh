@@ -8,5 +8,6 @@ cd "${ROOT_DIR}"
 
 npm run drizzle-kit:migrate
 npm run seed-users --workspace @workspace/api
+npm run seed-incidents --workspace @workspace/api
 
 echo "Database migrated and seeded"

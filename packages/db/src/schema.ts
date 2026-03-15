@@ -1,9 +1,14 @@
 import {
+  boolean,
+  doublePrecision,
   integer,
+  jsonb,
   pgTable,
+  text,
   timestamp,
   varchar,
 } from "drizzle-orm/pg-core";
+import type { MultiPolygon } from "geojson";
 
 export const users = pgTable("users", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -35,6 +40,28 @@ export const sessions = pgTable("sessions", {
   token: varchar("token", { length: 255 }).notNull().unique(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const incidents = pgTable("incidents", {
+  id: text("id").primaryKey(),
+  datasetName: text("dataset_name").notNull(),
+  geometry: jsonb("geometry").$type<MultiPolygon>().notNull(),
+  centroidLng: doublePrecision("centroid_lng").notNull(),
+  centroidLat: doublePrecision("centroid_lat").notNull(),
+  minLng: doublePrecision("min_lng").notNull(),
+  minLat: doublePrecision("min_lat").notNull(),
+  maxLng: doublePrecision("max_lng").notNull(),
+  maxLat: doublePrecision("max_lat").notNull(),
+  damagePct0m: doublePrecision("damage_pct_0m").notNull(),
+  damagePct10m: doublePrecision("damage_pct_10m").notNull(),
+  damagePct20m: doublePrecision("damage_pct_20m").notNull(),
+  builtPct0m: doublePrecision("built_pct_0m").notNull(),
+  unknownPct: doublePrecision("unknown_pct").notNull(),
+  damaged: boolean("damaged").notNull(),
+  severity: text("severity").notNull(),
+  importedAt: timestamp("imported_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });

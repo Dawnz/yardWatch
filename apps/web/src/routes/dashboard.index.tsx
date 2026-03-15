@@ -1,47 +1,29 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import type { GeoJSONSource, LngLatBoundsLike, Map as MapboxMap, Popup } from "mapbox-gl";
 import { MapSidebar } from "../components/map-sidebar";
-
-import type { Map as MapboxMap, Marker as MapboxMarker } from "mapbox-gl";
 
 import "mapbox-gl/dist/mapbox-gl.css";
 
-import { TrpcDemoPanel } from "@/components/trpc/trpc-demo-panel";
+import type { DashboardIncident, DashboardOverview } from "@/lib/incidents";
+import { SEVERITY_FILL, formatPercent, formatSeverity } from "@/lib/incidents";
 import { env } from "@/lib/env";
+import { useTRPC } from "@/lib/trpc";
 
 export const Route = createFileRoute("/dashboard/")({
   component: DashboardPage,
 });
 
-const KINGSTON_CENTER: [number, number] = [-76.7936, 18.0179];
+const MELISSA_CENTER: [number, number] = [-78.1313, 18.3072];
 const MAP_STYLE = "mapbox://styles/mapbox/satellite-streets-v12";
 const MAP_DEBUG_PREFIX = "[YardWatchMap]";
-
-const INCIDENT_MARKERS: Array<{
-  id: string;
-  label: string;
-  lngLat: [number, number];
-  color: string;
-}> = [
-  {
-    id: "INC-1043",
-    label: "Road Washout",
-    lngLat: [-76.8732, 17.9505],
-    color: "#f87171",
-  },
-  {
-    id: "INC-1042",
-    label: "Bridge Damage",
-    lngLat: [-76.7682, 18.0364],
-    color: "#fb923c",
-  },
-  {
-    id: "INC-1044",
-    label: "Roof Collapse",
-    lngLat: [-76.9576, 17.9956],
-    color: "#facc15",
-  },
-];
+const INCIDENTS_SOURCE_ID = "incidents";
+const INCIDENTS_FILL_LAYER_ID = "incidents-fill";
+const INCIDENTS_OUTLINE_LAYER_ID = "incidents-outline";
+const INCIDENTS_SELECTED_LAYER_ID = "incidents-selected";
+const DATASET_PADDING = { top: 48, right: 48, bottom: 48, left: 336 };
+const INCIDENT_PADDING = { top: 72, right: 72, bottom: 72, left: 336 };
 
 function maskToken(token: string) {
   if (!token) {
@@ -55,54 +37,105 @@ function maskToken(token: string) {
   return `${token.slice(0, 6)}...${token.slice(-6)}`;
 }
 
-function logMapSurface(map: MapboxMap, phase: string) {
-  const container = map.getContainer();
-  const canvas = map.getCanvas();
-
-  console.info(MAP_DEBUG_PREFIX, `${phase} surface`, {
-    container: {
-      clientWidth: container.clientWidth,
-      clientHeight: container.clientHeight,
-    },
-    canvas: {
-      width: canvas.width,
-      height: canvas.height,
-      clientWidth: canvas.clientWidth,
-      clientHeight: canvas.clientHeight,
-    },
-  });
+function toMapboxBounds(bounds: [number, number, number, number]): LngLatBoundsLike {
+  return [
+    [bounds[0], bounds[1]],
+    [bounds[2], bounds[3]],
+  ];
 }
 
 function DashboardPage() {
+  const trpc = useTRPC();
+  const overviewQuery = useQuery(trpc.incidents.overview.queryOptions());
+  const overview = overviewQuery.data;
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [selectionSerial, setSelectionSerial] = useState(0);
+  const [fitExtentSerial, setFitExtentSerial] = useState(0);
+
+  useEffect(() => {
+    if (!selectedIncidentId && overview?.incidents[0]) {
+      setSelectedIncidentId(overview.incidents[0].id);
+    }
+  }, [overview, selectedIncidentId]);
+
+  const selectedIncident =
+    overview?.incidents.find((incident) => incident.id === selectedIncidentId) ??
+    overview?.incidents[0] ??
+    null;
+
+  function handleSelectIncident(incidentId: string) {
+    setSelectedIncidentId(incidentId);
+    setSelectionSerial((current) => current + 1);
+  }
+
+  function handleFitDataset() {
+    setFitExtentSerial((current) => current + 1);
+  }
+
   return (
     <div className="relative h-screen overflow-hidden bg-background">
       <div className="absolute inset-0">
-        <MapCanvas />
+        <MapCanvas
+          overview={overview}
+          selectedIncident={selectedIncident}
+          selectedIncidentId={selectedIncidentId}
+          selectionSerial={selectionSerial}
+          fitExtentSerial={fitExtentSerial}
+          onSelectIncident={handleSelectIncident}
+          isQueryPending={overviewQuery.isPending}
+          queryErrorMessage={overviewQuery.error?.message}
+        />
       </div>
 
-      {/* Left sidebar overlay */}
-      <MapSidebar />
+      <MapSidebar
+        overview={overview}
+        selectedIncidentId={selectedIncidentId}
+        onSelectIncident={handleSelectIncident}
+        onFitDataset={handleFitDataset}
+        isLoading={overviewQuery.isPending}
+        isError={overviewQuery.isError}
+        errorMessage={overviewQuery.error?.message}
+      />
 
-      {/* Stats bar — top-right overlay */}
       <div className="absolute right-4 top-4 z-10">
-        <StatsBar />
-      </div>
-
-      <div className="absolute bottom-4 right-4 z-10">
-        <TrpcDemoPanel />
+        <StatsBar overview={overview} isLoading={overviewQuery.isPending} />
       </div>
     </div>
   );
 }
 
-function MapCanvas() {
+interface MapCanvasProps {
+  overview?: DashboardOverview;
+  selectedIncident: DashboardIncident | null;
+  selectedIncidentId: string | null;
+  selectionSerial: number;
+  fitExtentSerial: number;
+  onSelectIncident: (incidentId: string) => void;
+  isQueryPending: boolean;
+  queryErrorMessage?: string;
+}
+
+function MapCanvas({
+  overview,
+  selectedIncident,
+  selectedIncidentId,
+  selectionSerial,
+  fitExtentSerial,
+  onSelectIncident,
+  isQueryPending,
+  queryErrorMessage,
+}: MapCanvasProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapboxMap | null>(null);
-  const markersRef = useRef<MapboxMarker[]>([]);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">(
-    "loading",
-  );
+  const mapboxModuleRef = useRef<typeof import("mapbox-gl").default | null>(null);
+  const popupRef = useRef<Popup | null>(null);
+  const hasLayerHandlersRef = useRef(false);
+  const hasFittedDatasetRef = useRef(false);
+  const onSelectIncidentRef = useRef(onSelectIncident);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  onSelectIncidentRef.current = onSelectIncident;
 
   useEffect(() => {
     let cancelled = false;
@@ -112,16 +145,12 @@ function MapCanvas() {
 
     async function initializeMap() {
       if (!mapContainerRef.current || mapRef.current) {
-        console.info(MAP_DEBUG_PREFIX, "Skipping init", {
-          hasContainer: Boolean(mapContainerRef.current),
-          hasExistingMap: Boolean(mapRef.current),
-        });
         return;
       }
 
       try {
         console.info(MAP_DEBUG_PREFIX, "Starting map initialization", {
-          center: KINGSTON_CENTER,
+          center: MELISSA_CENTER,
           style: MAP_STYLE,
           token: maskToken(env.VITE_MAP_BOX_API_KEY),
         });
@@ -129,72 +158,46 @@ function MapCanvas() {
         const { default: mapboxgl } = await import("mapbox-gl");
 
         if (cancelled || !mapContainerRef.current) {
-          console.warn(
-            MAP_DEBUG_PREFIX,
-            "Initialization aborted before map creation",
-            {
-              cancelled,
-              hasContainer: Boolean(mapContainerRef.current),
-            },
-          );
           return;
         }
 
         mapboxgl.accessToken = env.VITE_MAP_BOX_API_KEY;
-        console.info(MAP_DEBUG_PREFIX, "Mapbox module loaded");
+        mapboxModuleRef.current = mapboxgl;
 
         const map = new mapboxgl.Map({
           container: mapContainerRef.current,
           style: MAP_STYLE,
-          center: KINGSTON_CENTER,
-          zoom: 10.8,
+          center: MELISSA_CENTER,
+          zoom: 15,
           bearing: 0,
           pitch: 0,
           attributionControl: false,
         });
 
         mapRef.current = map;
-        console.info(MAP_DEBUG_PREFIX, "Map instance created", {
-          zoom: map.getZoom(),
-          center: map.getCenter().toArray(),
-        });
-        logMapSurface(map, "Initial");
-
         map.addControl(
           new mapboxgl.NavigationControl({ visualizePitch: true }),
           "top-right",
         );
-        map.addControl(
-          new mapboxgl.ScaleControl({ unit: "metric" }),
-          "bottom-right",
-        );
+        map.addControl(new mapboxgl.ScaleControl({ unit: "metric" }), "bottom-right");
 
         resizeObserver = new ResizeObserver(() => {
-          if (cancelled) {
-            return;
+          if (!cancelled) {
+            map.resize();
           }
-
-          map.resize();
-          logMapSurface(map, "ResizeObserver");
         });
         resizeObserver.observe(mapContainerRef.current);
 
         requestAnimationFrame(() => {
-          if (cancelled) {
-            return;
+          if (!cancelled) {
+            map.resize();
           }
-
-          map.resize();
-          logMapSurface(map, "Animation frame resize");
         });
 
         resizeTimeoutId = window.setTimeout(() => {
-          if (cancelled) {
-            return;
+          if (!cancelled) {
+            map.resize();
           }
-
-          map.resize();
-          logMapSurface(map, "Delayed resize");
         }, 250);
 
         loadTimeoutId = window.setTimeout(() => {
@@ -205,12 +208,6 @@ function MapCanvas() {
           });
         }, 8000);
 
-        map.on("styledata", () => {
-          console.info(MAP_DEBUG_PREFIX, "styledata event received", {
-            isStyleLoaded: map.isStyleLoaded(),
-          });
-        });
-
         map.once("load", () => {
           if (cancelled) {
             return;
@@ -218,33 +215,10 @@ function MapCanvas() {
 
           if (loadTimeoutId) {
             window.clearTimeout(loadTimeoutId);
-            loadTimeoutId = undefined;
           }
-
-          console.info(MAP_DEBUG_PREFIX, "load event received");
-          logMapSurface(map, "Load");
-
-          markersRef.current = INCIDENT_MARKERS.map((incident) =>
-            new mapboxgl.Marker({ color: incident.color })
-              .setLngLat(incident.lngLat)
-              .setPopup(
-                new mapboxgl.Popup({ offset: 18 }).setHTML(
-                  `<strong>${incident.id}</strong><br />${incident.label}`,
-                ),
-              )
-              .addTo(map),
-          );
 
           setStatus("ready");
           setErrorMessage(null);
-        });
-
-        map.once("idle", () => {
-          console.info(MAP_DEBUG_PREFIX, "idle event received", {
-            isStyleLoaded: map.isStyleLoaded(),
-            markers: INCIDENT_MARKERS.length,
-          });
-          logMapSurface(map, "Idle");
         });
 
         map.on("error", (event) => {
@@ -254,20 +228,11 @@ function MapCanvas() {
 
           if (loadTimeoutId) {
             window.clearTimeout(loadTimeoutId);
-            loadTimeoutId = undefined;
           }
-
-          console.error(MAP_DEBUG_PREFIX, "Mapbox emitted an error", {
-            message:
-              event.error?.message ??
-              "Mapbox could not load the requested style.",
-            error: event.error,
-          });
 
           setStatus("error");
           setErrorMessage(
-            event.error?.message ??
-              "Mapbox could not load the requested style.",
+            event.error?.message ?? "Mapbox could not load the requested style.",
           );
         });
       } catch (error) {
@@ -275,20 +240,9 @@ function MapCanvas() {
           return;
         }
 
-        if (loadTimeoutId) {
-          window.clearTimeout(loadTimeoutId);
-          loadTimeoutId = undefined;
-        }
-
-        console.error(MAP_DEBUG_PREFIX, "Map initialization failed", {
-          error,
-        });
-
         setStatus("error");
         setErrorMessage(
-          error instanceof Error
-            ? error.message
-            : "Mapbox failed to initialize.",
+          error instanceof Error ? error.message : "Mapbox failed to initialize.",
         );
       }
     }
@@ -304,13 +258,169 @@ function MapCanvas() {
         window.clearTimeout(resizeTimeoutId);
       }
       resizeObserver?.disconnect();
-      console.info(MAP_DEBUG_PREFIX, "Cleaning up map instance");
-      markersRef.current.forEach((marker) => marker.remove());
-      markersRef.current = [];
+      popupRef.current?.remove();
+      popupRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
+      hasLayerHandlersRef.current = false;
+      hasFittedDatasetRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || status !== "ready" || !overview) {
+      return;
+    }
+
+    const source = map.getSource(INCIDENTS_SOURCE_ID) as GeoJSONSource | undefined;
+
+    if (!source) {
+      map.addSource(INCIDENTS_SOURCE_ID, {
+        type: "geojson",
+        data: overview.featureCollection,
+        promoteId: "id",
+      });
+
+      map.addLayer({
+        id: INCIDENTS_FILL_LAYER_ID,
+        type: "fill",
+        source: INCIDENTS_SOURCE_ID,
+        paint: {
+          "fill-color": [
+            "match",
+            ["get", "severity"],
+            "critical",
+            SEVERITY_FILL.critical,
+            "high",
+            SEVERITY_FILL.high,
+            "medium",
+            SEVERITY_FILL.medium,
+            SEVERITY_FILL.low,
+          ],
+          "fill-opacity": 0.45,
+        },
+      });
+
+      map.addLayer({
+        id: INCIDENTS_OUTLINE_LAYER_ID,
+        type: "line",
+        source: INCIDENTS_SOURCE_ID,
+        paint: {
+          "line-color": "#0f172a",
+          "line-width": 1.25,
+          "line-opacity": 0.95,
+        },
+      });
+
+      map.addLayer({
+        id: INCIDENTS_SELECTED_LAYER_ID,
+        type: "line",
+        source: INCIDENTS_SOURCE_ID,
+        filter: ["==", ["get", "id"], ""],
+        paint: {
+          "line-color": "#ffffff",
+          "line-width": 3,
+          "line-opacity": 1,
+        },
+      });
+    } else {
+      source.setData(overview.featureCollection);
+    }
+
+    if (!hasLayerHandlersRef.current) {
+      map.on("click", INCIDENTS_FILL_LAYER_ID, (event) => {
+        const clickedId = event.features?.[0]?.properties?.id;
+        if (typeof clickedId === "string") {
+          onSelectIncidentRef.current(clickedId);
+        }
+      });
+
+      map.on("mouseenter", INCIDENTS_FILL_LAYER_ID, () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+
+      map.on("mouseleave", INCIDENTS_FILL_LAYER_ID, () => {
+        map.getCanvas().style.cursor = "";
+      });
+
+      hasLayerHandlersRef.current = true;
+    }
+
+    if (!hasFittedDatasetRef.current && overview.dataset.bounds) {
+      map.fitBounds(toMapboxBounds(overview.dataset.bounds), {
+        padding: DATASET_PADDING,
+        duration: 0,
+      });
+      hasFittedDatasetRef.current = true;
+    }
+  }, [overview, status]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer(INCIDENTS_SELECTED_LAYER_ID)) {
+      return;
+    }
+
+    map.setFilter(INCIDENTS_SELECTED_LAYER_ID, [
+      "==",
+      ["get", "id"],
+      selectedIncidentId ?? "",
+    ]);
+  }, [selectedIncidentId, status]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !overview?.dataset.bounds || fitExtentSerial === 0) {
+      return;
+    }
+
+    map.fitBounds(toMapboxBounds(overview.dataset.bounds), {
+      padding: DATASET_PADDING,
+      duration: 900,
+    });
+  }, [fitExtentSerial, overview]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const mapboxgl = mapboxModuleRef.current;
+    if (!map || !mapboxgl || !selectedIncident || selectionSerial === 0) {
+      return;
+    }
+
+    popupRef.current?.remove();
+    popupRef.current = new mapboxgl.Popup({
+      offset: 18,
+      closeButton: false,
+      closeOnClick: false,
+    })
+      .setLngLat(selectedIncident.centroid)
+      .setHTML(
+        `<strong>${selectedIncident.label}</strong><br />${formatSeverity(
+          selectedIncident.severity,
+        )} · ${formatPercent(selectedIncident.damagePct0m)}`,
+      )
+      .addTo(map);
+
+    map.fitBounds(toMapboxBounds(selectedIncident.bbox), {
+      padding: INCIDENT_PADDING,
+      duration: 900,
+      maxZoom: 18,
+    });
+  }, [selectedIncident, selectionSerial]);
+
+  const overlayMessage =
+    status === "error"
+      ? errorMessage
+      : queryErrorMessage
+        ? "The incidents API returned an error."
+        : status === "loading"
+          ? "Initializing the Mapbox canvas."
+          : isQueryPending
+            ? "Loading Melissa detections and polygon overlays."
+            : !overview?.incidents.length
+              ? "No incidents available yet. Seed the Melissa dataset to draw polygons."
+              : null;
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-background">
@@ -328,17 +438,14 @@ function MapCanvas() {
       />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-background/80 via-background/10 to-transparent" />
 
-      {status !== "ready" ? (
+      {overlayMessage ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
           <div className="max-w-sm rounded-2xl border border-border bg-card/85 px-4 py-3 backdrop-blur-xl">
             <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
-              {status === "loading" ? "Loading Mapbox" : "Mapbox Error"}
+              {status === "error" || queryErrorMessage ? "Map Error" : "Mapbox"}
             </p>
             <p className="mt-2 text-sm text-foreground">
-              {status === "loading"
-                ? "Initializing the live map canvas for YardWatch."
-                : (errorMessage ??
-                  "Check VITE_MAP_BOX_API_KEY and confirm it is a valid public Mapbox token.")}
+              {overlayMessage}
             </p>
           </div>
         </div>
@@ -346,25 +453,41 @@ function MapCanvas() {
 
       <div className="absolute bottom-8 right-8 rounded-full border border-white/10 bg-black/30 px-3 py-1.5 backdrop-blur-md">
         <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-white/75">
-          Mapbox live view
+          Melissa polygon overlay
         </p>
       </div>
     </div>
   );
 }
 
-function StatsBar() {
-  const stats: Array<{ label: string; value: string; critical?: boolean }> = [
-    { label: "detections", value: "126" },
-    { label: "critical", value: "19", critical: true },
-    { label: "areas", value: "8" },
-  ];
+function StatsBar({
+  overview,
+  isLoading,
+}: {
+  overview?: DashboardOverview;
+  isLoading: boolean;
+}) {
+  const stats = overview
+    ? [
+        { label: "detections", value: overview.stats.total.toString() },
+        { label: "damaged", value: overview.stats.damaged.toString() },
+        {
+          label: "critical",
+          value: overview.stats.bySeverity.critical.toString(),
+          critical: true,
+        },
+      ]
+    : [
+        { label: "detections", value: "--" },
+        { label: "damaged", value: "--" },
+        { label: "critical", value: "--", critical: true },
+      ];
 
   return (
     <div className="flex items-center overflow-hidden rounded-xl border border-border bg-card/80 backdrop-blur-xl">
-      {stats.map((stat, i) => (
+      {stats.map((stat, index) => (
         <div key={stat.label} className="flex items-center">
-          {i > 0 && <div className="h-8 w-px bg-border" />}
+          {index > 0 ? <div className="h-8 w-px bg-border" /> : null}
           <div className="flex items-center gap-1.5 px-4 py-2">
             <span
               className={[
@@ -374,19 +497,26 @@ function StatsBar() {
             >
               {stat.value}
             </span>
-            <span className="text-[11px] text-muted-foreground">
-              {stat.label}
-            </span>
+            <span className="text-[11px] text-muted-foreground">{stat.label}</span>
           </div>
         </div>
       ))}
       <div className="h-8 w-px bg-border" />
       <div className="flex items-center gap-2 px-4 py-2">
         <span
-          className="h-1.5 w-1.5 rounded-full bg-emerald-400"
-          style={{ boxShadow: "0 0 6px oklch(0.74 0.2 150 / 0.8)" }}
+          className={[
+            "h-1.5 w-1.5 rounded-full",
+            isLoading ? "bg-yellow-400" : "bg-emerald-400",
+          ].join(" ")}
         />
-        <span className="text-[11px] font-medium text-emerald-400">Active</span>
+        <span
+          className={[
+            "text-[11px] font-medium",
+            isLoading ? "text-yellow-400" : "text-emerald-400",
+          ].join(" ")}
+        >
+          {isLoading ? "Loading" : "Active"}
+        </span>
       </div>
     </div>
   );
