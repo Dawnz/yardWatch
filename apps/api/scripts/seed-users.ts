@@ -1,10 +1,6 @@
-import { pool } from '../src/db';
-import bcrypt from 'bcrypt';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const SALT_ROUNDS = 10;
+import 'dotenv/config';
+import { registerUser } from '../src/auth/authService';
+import { closeDbConnections } from '../src/db';
 
 async function seed() {
 	const users = [
@@ -13,16 +9,17 @@ async function seed() {
 	];
 
 	for (const user of users) {
-		const hash = await bcrypt.hash(user.password, SALT_ROUNDS);
-		await pool.query('INSERT INTO users (email, password, organization_id) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING', [
-			user.email,
-			hash,
-			user.organizationId,
-		]);
+		await registerUser(user.email, user.password, user.organizationId);
 	}
 
 	console.log('Users seeded successfully');
-	process.exit(0);
 }
 
-seed();
+seed()
+	.catch((error) => {
+		console.error('Failed to seed users', error);
+		process.exitCode = 1;
+	})
+	.finally(async () => {
+		await closeDbConnections();
+	});

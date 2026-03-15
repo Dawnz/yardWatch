@@ -1,5 +1,4 @@
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
-import 'dotenv/config';
 import { createContext } from './context';
 import { resolveCors, withCorsHeaders } from './cors';
 import { createDb } from './db';

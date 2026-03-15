@@ -10,12 +10,14 @@
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
 		"test": "vitest",
-		"start-db": "./scripts/start-db.sh",
-		"seed-db": "./scripts/seed-db.sh",
-		"seed-users": "ts-node scripts/seed-users.ts",
+		"typecheck": "tsc --noEmit",
+		"start-db": "bash ./scripts/start-db.sh",
+		"seed-db": "bash ./scripts/seed-db.sh",
+		"seed-users": "tsx scripts/seed-users.ts",
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {
+		"@workspace/db": "workspace:*",
 		"@trpc/server": "^11.12.1",
 		"bcrypt": "^6.0.0",
 		"dotenv": "^17.3.1",
@@ -26,6 +28,9 @@
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.12.4",
 		"@trpc/client": "^11.12.1",
+		"@types/bcrypt": "^6.0.0",
+		"@types/pg": "^8.18.0",
+		"tsx": "^4.21.0",
 		"typescript": "^5.5.2",
 		"vitest": "~3.2.0",
 		"wrangler": "^3.101.0"
