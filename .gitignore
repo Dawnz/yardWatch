@@ -11,6 +11,18 @@ build/
 coverage/
 
 .maps/*
+/experiments/
+/data/reference/
+/data/labels/.maps/
+/data/labels/*.qmd
+/apps/web/public/melissa-damage.geojson
+/melissa_package.gpkg
+/melissa_package.gpkg-shm
+/melissa_package.gpkg-wal
+*.gpkg-shm
+*.gpkg-wal
+/scripts/__pycache__/
+/apps/web/.output/
 
 # =========================
 # Environment Variables
