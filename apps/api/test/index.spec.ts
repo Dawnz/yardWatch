@@ -1,24 +1,85 @@
-import { env, createExecutionContext, waitOnExecutionContext, SELF } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
-import worker from '../src/index';
+import { SELF } from 'cloudflare:test';
+import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
+import { describe, expect, it } from 'vitest';
+import SuperJSON from 'superjson';
 
-// For now, you'll need to do something like this to get a correctly-typed
-// `Request` to pass to `worker.fetch()`.
-const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
+import type { AppRouter } from '../src/router';
 
-describe('Hello World worker', () => {
-	it('responds with Hello World! (unit style)', async () => {
-		const request = new IncomingRequest('http://example.com');
-		// Create an empty context to pass to `worker.fetch()`.
-		const ctx = createExecutionContext();
-		const response = await worker.fetch(request, env, ctx);
-		// Wait for all `Promise`s passed to `ctx.waitUntil()` to settle before running test assertions
-		await waitOnExecutionContext(ctx);
-		expect(await response.text()).toMatchInlineSnapshot(`"Hello World!"`);
+const ALLOWED_ORIGIN = 'http://localhost:3000';
+
+function createTestClient(origin = ALLOWED_ORIGIN) {
+	return createTRPCProxyClient<AppRouter>({
+		links: [
+			httpBatchLink({
+				url: 'https://example.com/api/trpc',
+				transformer: SuperJSON,
+				fetch(url, options) {
+					const headers = new Headers(options?.headers);
+					headers.set('origin', origin);
+
+					return SELF.fetch(url, {
+						...(options ?? {}),
+						headers,
+					});
+				},
+			}),
+		],
+	});
+}
+
+describe('tRPC worker', () => {
+	it('accepts allowed preflight requests', async () => {
+		const response = await SELF.fetch('https://example.com/api/trpc', {
+			method: 'OPTIONS',
+			headers: {
+				origin: ALLOWED_ORIGIN,
+				'access-control-request-method': 'POST',
+				'access-control-request-headers': 'content-type,authorization',
+			},
+		});
+
+		expect(response.status).toBe(204);
+		expect(response.headers.get('access-control-allow-origin')).toBe(ALLOWED_ORIGIN);
+		expect(response.headers.get('access-control-allow-credentials')).toBe('true');
 	});
 
-	it('responds with Hello World! (integration style)', async () => {
-		const response = await SELF.fetch('https://example.com');
-		expect(await response.text()).toMatchInlineSnapshot(`"Hello World!"`);
+	it('rejects disallowed origins before tRPC executes', async () => {
+		const response = await SELF.fetch('https://example.com/api/trpc/hello', {
+			headers: {
+				origin: 'https://blocked.example.com',
+			},
+		});
+
+		expect(response.status).toBe(403);
+		expect(await response.text()).toBe('Origin not allowed');
+	});
+
+	it('serves the public hello query', async () => {
+		const client = createTestClient();
+		const result = await client.hello.query();
+
+		expect(result.message).toBe('Hello from the YardWatch tRPC API.');
+		expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/);
+	});
+
+	it('returns a validation error for invalid demo input', async () => {
+		const client = createTestClient();
+
+		await expect(client.demo.submit.mutate({ text: '' })).rejects.toMatchObject({
+			data: {
+				code: 'BAD_REQUEST',
+			},
+		});
+	});
+
+	it('returns UNAUTHORIZED for protected procedures without auth', async () => {
+		const client = createTestClient();
+
+		await expect(client.session.me.query()).rejects.toMatchObject({
+			data: {
+				code: 'UNAUTHORIZED',
+			},
+			message: 'Missing user identity',
+		});
 	});
 });

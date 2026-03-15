@@ -1,14 +1,16 @@
-import { createFileRoute } from "@tanstack/react-router"
-import { MapSidebar } from "../components/map-sidebar"
+import { createFileRoute } from "@tanstack/react-router";
+import { MapSidebar } from "../components/map-sidebar";
+
+import { TrpcDemoPanel } from "@/components/trpc/trpc-demo-panel";
 
 export const Route = createFileRoute("/dashboard/")({
   component: DashboardPage,
-})
+});
 
 function DashboardPage() {
   return (
     <div className="relative h-screen overflow-hidden bg-background">
-      {/* Map canvas — full viewport, replaced by ArcGIS later */}
+      {/* Map canvas placeholder until Mapbox is wired in */}
       <div className="absolute inset-0">
         <MapCanvas />
       </div>
@@ -20,8 +22,12 @@ function DashboardPage() {
       <div className="absolute right-4 top-4 z-10">
         <StatsBar />
       </div>
+
+      <div className="absolute bottom-4 right-4 z-10">
+        <TrpcDemoPanel />
+      </div>
     </div>
-  )
+  );
 }
 
 function MapCanvas() {
@@ -47,11 +53,11 @@ function MapCanvas() {
       {/* Placeholder label */}
       <div className="absolute bottom-8 right-8 opacity-40">
         <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
-          Map canvas · ArcGIS
+          Map canvas placeholder
         </p>
       </div>
     </div>
-  )
+  );
 }
 
 function StatsBar() {
@@ -59,7 +65,7 @@ function StatsBar() {
     { label: "detections", value: "126" },
     { label: "critical", value: "19", critical: true },
     { label: "areas", value: "8" },
-  ]
+  ];
 
   return (
     <div className="flex items-center overflow-hidden rounded-xl border border-border bg-card/80 backdrop-blur-xl">
@@ -75,7 +81,9 @@ function StatsBar() {
             >
               {stat.value}
             </span>
-            <span className="text-[11px] text-muted-foreground">{stat.label}</span>
+            <span className="text-[11px] text-muted-foreground">
+              {stat.label}
+            </span>
           </div>
         </div>
       ))}
@@ -88,5 +96,5 @@ function StatsBar() {
         <span className="text-[11px] font-medium text-emerald-400">Active</span>
       </div>
     </div>
-  )
+  );
 }

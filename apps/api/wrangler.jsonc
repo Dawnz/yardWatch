@@ -1,7 +1,10 @@
 {
-	"name": "<WORKER_NAME>",
+	"name": "yardwatch-api",
 	"main": "src/index.ts",
-	"compatibility_date": "<COMPATIBILITY_DATE>",
+	"compatibility_date": "2026-03-10",
+	"vars": {
+		"CORS_ALLOWED_ORIGINS": "http://localhost:3000",
+	},
 	"observability": {
 		"enabled": true,
 	},

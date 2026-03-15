@@ -12,21 +12,24 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@arcgis/core": "^5.0.10",
-    "@arcgis/map-components": "^5.0.10",
-    "@esri/calcite-components": "^5.0.2",
+    "@tanstack/react-query": "^5.90.21",
     "@hugeicons/core-free-icons": "^4.0.0",
     "@hugeicons/react": "^1.1.6",
     "@tailwindcss/vite": "^4.1.18",
+    "@trpc/client": "^11.12.1",
+    "@trpc/tanstack-react-query": "^11.12.1",
     "@tanstack/react-router": "^1.132.0",
     "@tanstack/react-start": "^1.132.0",
     "@tanstack/router-plugin": "^1.132.0",
+    "@workspace/api": "*",
     "@workspace/ui": "*",
     "nitro": "latest",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "superjson": "^2.2.2",
     "tailwindcss": "^4.1.18",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@tanstack/eslint-config": "^0.3.0",

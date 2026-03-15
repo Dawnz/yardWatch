@@ -6,7 +6,7 @@ export const Route = createFileRoute("/dashboard")({
 
 function DashboardLayout() {
   return (
-    <div className="h-screen overflow-hidden bg-[#0C0C0C]">
+    <div className="h-screen overflow-hidden bg-background">
       <Outlet />
     </div>
   )
